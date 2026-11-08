@@ -1,0 +1,64 @@
+name: discord-realtime-voice
+label: Discord Realtime Voice
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+license: MIT
+homepage: https://github.com/shohei81/hermes-discord-realtime-voice
+tags: [gateway, discord, voice]
+description: >
+  Talk with your agent in Discord voice channels through an OpenAI Realtime or GPT-Live
+  speech-to-speech model. The voice model holds the conversation (streaming audio, barge-in,
+  backchannels) and hands real work to the full Hermes agent, whose reply it speaks.
+  Optionally follows one user in and out of voice channels.
+  Note: wraps internals of the built-in Discord adapter; it checks them on load and stays
+  inactive (with a warning) on Hermes builds it does not recognize.
+config_schema:
+  realtime_enabled:
+    type: bool
+    default: false
+    description: Use the realtime voice model when the bot joins a voice channel (otherwise Hermes' STT/TTS voice mode is used).
+  model:
+    type: str
+    default: gpt-realtime-2.1-mini
+    description: OpenAI model. gpt-live-* selects the full-duplex GPT-Live bridge, anything else the Realtime bridge.
+  voice:
+    type: str
+    default: marin
+    description: Output voice name.
+  prompt_preset:
+    type: str
+    default: en
+    description: Built-in voice prompt language (en or ja).
+  instructions:
+    type: str
+    default: ""
+    description: Extra guidance appended to the built-in prompt (speaking style, persona notes).
+  include_soul:
+    type: bool
+    default: true
+    description: Add SOUL.md to the voice prompt so the voice layer knows who it is.
+  include_memory:
+    type: bool
+    default: true
+    description: Add the agent's memory snapshots (user and memory) to the voice prompt.
+  open_thread:
+    type: bool
+    default: true
+    description: Open a thread per call in the bound text channel and run delegations there.
+  api_key_env:
+    type: str
+    default: HERMES_REALTIME_OPENAI_API_KEY
+    description: Environment variable holding the OpenAI API key used for voice (kept separate from OPENAI_API_KEY on purpose).
+  follow_enabled:
+    type: bool
+    default: false
+    description: Join, move and leave voice channels together with one user.
+  follow_user_id:
+    type: str
+    default: ""
+    description: Discord user id to follow. Empty = the single DISCORD_ALLOWED_USERS entry.
+  follow_text_channel_id:
+    type: str
+    default: ""
+    description: Text channel bound to followed calls. Empty = DISCORD_HOME_CHANNEL.

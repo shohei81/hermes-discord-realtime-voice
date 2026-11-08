@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"  # weekly: catch breakage from new Hermes releases
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hermes: ["v0.23.0", "latest"]  # tested release, newest stable release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Hermes release
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ matrix.hermes }}" = latest ]; then
+            tag=$(gh release view --repo NousResearch/hermes-agent --json tagName -q .tagName)
+          else
+            tag="${{ matrix.hermes }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Testing against Hermes $tag"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ steps.ref.outputs.tag }}
+          path: .hermes-src
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install Hermes and test deps
+        run: |
+          UV_PROJECT_ENVIRONMENT=$PWD/.venv uv sync --project .hermes-src --frozen -p 3.14 --extra discord
+          uv pip install --python .venv numpy websockets pytest pytest-asyncio
+
+      - name: Test
+        run: .venv/bin/python -m pytest -q
