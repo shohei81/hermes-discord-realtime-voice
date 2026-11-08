@@ -460,3 +460,40 @@ class TestVoiceFollow:
         make_plugin().on_discord_connect(native, SimpleNamespace())
         native.add_listener.assert_not_called()
         assert "voice follow is off" in caplog.text
+
+
+class TestLiveAdapterClass:
+    """Hermes loads the bundled Discord adapter as ``hermes_plugins.platforms__discord.adapter``,
+    a second copy of the module. The class of the live adapter must get wrapped too."""
+
+    def test_connect_wraps_the_class_the_gateway_runs(self, installed):
+        import importlib.util
+        import sys
+
+        import plugins.platforms.discord.adapter as canonical
+
+        import os
+        import types
+
+        pkg_name, name = "hermes_plugins_test_copy", "hermes_plugins_test_copy.adapter"
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [os.path.dirname(canonical.__file__)]  # relative sibling imports resolve here
+        sys.modules[pkg_name] = pkg
+        spec = importlib.util.spec_from_file_location(name, canonical.__file__)
+        copy = importlib.util.module_from_spec(spec)
+        sys.modules[name] = copy
+        try:
+            spec.loader.exec_module(copy)
+            assert copy.DiscordAdapter is not canonical.DiscordAdapter
+            assert not getattr(copy.DiscordAdapter.join_voice_channel, "__discord_realtime_voice__", False)
+
+            adapter = object.__new__(copy.DiscordAdapter)
+            for k, v in vars(bare_adapter()).items():
+                setattr(adapter, k, v)
+            installed.on_discord_connect(MagicMock(), adapter)
+
+            for method in ("join_voice_channel", "leave_voice_channel", "play_in_voice_channel"):
+                assert getattr(getattr(copy.DiscordAdapter, method), "__discord_realtime_voice__", False), method
+        finally:
+            for mod in [m for m in sys.modules if m.startswith(pkg_name)]:
+                sys.modules.pop(mod, None)

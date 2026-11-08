@@ -51,6 +51,10 @@ REQUIRED: tuple[tuple[str, str], ...] = (
     ("gateway.session_identity", "clear_identity"),
 )
 
+# Methods wrapped on whichever DiscordAdapter class the gateway runs.
+ADAPTER_METHODS = ("join_voice_channel", "leave_voice_channel", "play_in_voice_channel",
+                   "_voice_listen_loop", "_reset_voice_timeout", "build_source")
+
 # Instance attributes of a live DiscordAdapter (checked when the adapter connects).
 REQUIRED_ADAPTER_ATTRS = (
     "_client", "_voice_clients", "_voice_receivers", "_voice_listen_tasks",
@@ -177,11 +181,27 @@ class RealtimeVoice:
         from gateway.run_voice import GatewayVoiceMixin
         from plugins.platforms.discord.adapter import DiscordAdapter
 
-        _wrap(DiscordAdapter, "join_voice_channel", self._wrap_join)
-        _wrap(DiscordAdapter, "leave_voice_channel", self._wrap_leave)
-        _wrap(DiscordAdapter, "play_in_voice_channel", self._wrap_play)
+        self.wrap_adapter_class(DiscordAdapter)
         _wrap(GatewayVoiceMixin, "_should_send_voice_reply", self._wrap_should_send_voice_reply)
         self._patched = True
+        return True
+
+    def wrap_adapter_class(self, cls: type) -> bool:
+        """Wrap the voice methods of a Discord adapter class.
+
+        Hermes' plugin loader imports the bundled Discord adapter a second time, as
+        ``hermes_plugins.platforms__discord.adapter``, so the class the gateway actually runs
+        is not the one importable as ``plugins.platforms.discord.adapter``. Both get wrapped:
+        the canonical one at install, the live one when the adapter connects.
+        """
+        missing = [n for n in ADAPTER_METHODS if not callable(getattr(cls, n, None))]
+        if missing:
+            logger.warning("discord-realtime-voice: %s.%s lacks %s; realtime voice is off",
+                           cls.__module__, cls.__qualname__, ", ".join(missing))
+            return False
+        _wrap(cls, "join_voice_channel", self._wrap_join)
+        _wrap(cls, "leave_voice_channel", self._wrap_leave)
+        _wrap(cls, "play_in_voice_channel", self._wrap_play)
         return True
 
     def on_discord_connect(self, native: Any, adapter: Any) -> None:
@@ -192,6 +212,7 @@ class RealtimeVoice:
                            ", ".join(missing))
             return
         self._adapters.add(adapter)
+        self.wrap_adapter_class(type(adapter))
         add_listener = getattr(native, "add_listener", None)
         if not callable(add_listener):
             logger.warning("discord-realtime-voice: Discord client has no add_listener; voice follow is off")
@@ -329,13 +350,11 @@ class RealtimeVoice:
         Discord sends no packets while a user is silent, so gaps are filled with silence to
         keep server-side turn detection working.
         """
-        from plugins.platforms.discord.adapter import VoiceReceiver
-
         receiver = adapter._voice_receivers.get(guild_id)
         if not receiver:
             return
         interval = 0.1
-        silence = b"\x00" * int(VoiceReceiver.SAMPLE_RATE * VoiceReceiver.CHANNELS * 2 * interval)
+        silence = b"\x00" * int(receiver.SAMPLE_RATE * receiver.CHANNELS * 2 * interval)
         try:
             while receiver._running and bridge.running:
                 await asyncio.sleep(interval)
